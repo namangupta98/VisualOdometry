@@ -2,9 +2,9 @@
 - A course project 
 
 ## Author
-- Amoghavarsha
-- Naman 
-- Pruthvi
+- Amoghavarsha Prasanna
+- Naman Gupta 
+- Pruthvi Sanghavi
 
 ## Dependencies
 - opencv ```pip install opencv-python```
