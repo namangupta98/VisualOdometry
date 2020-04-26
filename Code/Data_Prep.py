@@ -2,6 +2,7 @@ import cv2
 import glob
 from Oxford_dataset.ReadCameraModel import ReadCameraModel
 from Oxford_dataset.UndistortImage import UndistortImage
+import numpy as np
 
 
 # function to get keypoints
@@ -10,13 +11,20 @@ def getKeypoints(img):
     gray_image = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
     # intiate STAR detector
-    orb = cv2.ORB()
+    orb = cv2.ORB_create()
 
     # find keypoints with ORB
     kp = orb.detect(gray_image, None)
 
     # draw only keypoints
-    return cv2.drawKeypoints(img, kp, color=(0, 255, 0), flags=0)
+    key_image = cv2.drawKeypoints(img, kp, np.array([]), color=(0, 255, 0), flags=0)
+
+    return key_image
+
+
+# # function to getKeypoints using SIFT
+# def getKeypoints(img):
+#     pass
 
 
 # main function
@@ -41,7 +49,7 @@ if __name__ == '__main__':
         # get keypoints using ORB
         keypoint_image = getKeypoints(undistorted_image)
 
-        cv2.imshow('frame', undistorted_image)
+        cv2.imshow('frame', keypoint_image)
 
         if cv2.waitKey(1) and 0xFF == ord('q'):
             break
