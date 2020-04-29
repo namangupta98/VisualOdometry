@@ -24,6 +24,10 @@ def getKeypoints(old_img, current_image):
     # Sort them in the order of their distance.
     matches = sorted(matches, key=lambda x: x.distance)
 
+    # Draw epilines
+    img3 = cv2.drawMatches(old_gray_image, kp1, current_gray_image, kp2, matches[:10], np.array([]), flags=2)
+    img3 = cv2.resize(img3,(1260,480))
+    cv2.imshow("epilines", img3)
     # draw only keypoints
     # key_image = cv2.drawKeypoints(img, kp, np.array([]), color=(0, 255, 0), flags=0)
 
