@@ -27,14 +27,68 @@ def getKeypoints(old_img, current_image):
     # draw only keypoints
     # key_image = cv2.drawKeypoints(img, kp, np.array([]), color=(0, 255, 0), flags=0)
 
-    return matches
+    return matches, kp1, kp2
 
 
 # function to create fundamental matrix
-def fundamentalMatrix(kp, kp_old):
-    i = random.sample(range(len(kp)+1), 8)
-    i_old = random.sample(range(len(kp_old)+1), 8)
-    return fMatrix
+def fundamentalMatrix(points, f1, f2):
+    x, y = np.zeros(8), np.zeros(8)
+    x_, y_ = np.zeros(8), np.zeros(8)
+    A, X, X_ = [], [], []
+
+    # generating A matrix
+    for i in range(8):
+        x[i], y[i] = f1[points[i].queryIdx].pt[0], f1[points[i].queryIdx].pt[1]
+        x_[i], y_[i] = f2[points[i].trainIdx].pt[0], f2[points[i].trainIdx].pt[1]
+
+        A_rows = np.array([[x[i]*x_[i], x[i]*y_[i], x[i], y[i]*x_[i], y[i]*y_[i], y[i], x_[i], y_[i], 1]])
+        X_col = np.array([[x[i]], [y[i]], [1]])
+        X_col_ = np.array([[x_[i]], [y_[i]], [1]])
+
+        X.append(X_col)
+        X_.append(X_col_)
+        A.append(A_rows)
+
+    X = np.reshape(np.array(X).T, (3, 8))
+    X_ = np.reshape(np.array(X_).T, (3, 8))
+    A = np.reshape(A, (8, 9))
+
+    [U, S, V] = np.linalg.svd(A)
+    vx = V[:, 8]
+
+    F = np.reshape(vx, (3, 3))
+    F = np.round(F, 4)
+    F[2, 2] = 0
+
+    return F, X, X_
+
+
+# function to get best fundamental matrix
+def fRANSAC(points, kp1, kp2):
+
+    ass_prob = 0
+
+    for n in range(100):
+        DMatch = random.sample(points, 8)
+        inlier_count = 0
+
+        # get fundamental matrix for sample
+        F, x, x_ = fundamentalMatrix(DMatch, kp1, kp2)
+
+        # epipolar constraint
+        ep_const = x_.T @ F @ x
+
+        for i in range(len(DMatch)):
+            if ep_const[i, i] < 0:
+                inlier_count += 1
+
+        new_prob = inlier_count/len(DMatch)
+
+        if new_prob >= ass_prob:
+            ass_prob = new_prob
+            bestF = F
+
+    return bestF
 
 
 # main function
@@ -66,14 +120,14 @@ if __name__ == '__main__':
         current_undistorted_image = UndistortImage(current_color_frame, LUT)
 
         # get keypoints using ORB
-        match = getKeypoints(old_undistorted_image, current_undistorted_image)
+        match, key1, key2 = getKeypoints(old_undistorted_image, current_undistorted_image)
 
-        print(match[0].trainIdx)
+        # fundamental matrix with RANSAC
+        F = fRANSAC(match, key1, key2)
 
-        # fundamental matrix
-        # F = fundamentalMatrix(current_keypoints, old_keypoints)
+        # print(F)
 
-        # cv2.imshow('frame', keypoint_image)
+        # cv2.imshow('frame', old_undistorted_image)
 
         if cv2.waitKey(1) and 0xFF == ord('q'):
             break
