@@ -24,51 +24,62 @@ def getKeypoints(old_img, current_image):
     # Sort them in the order of their distance.
     matches = sorted(matches, key=lambda x: x.distance)
 
-    # Draw epilines
-    img3 = cv2.drawMatches(old_gray_image, kp1, current_gray_image, kp2, matches[:10], np.array([]), flags=2)
-    img3 = cv2.resize(img3,(1260,480))
-    cv2.imshow("epilines", img3)
-    # draw only keypoints
-    # key_image = cv2.drawKeypoints(img, kp, np.array([]), color=(0, 255, 0), flags=0)
-
     return matches, kp1, kp2
 
 
 # function to create fundamental matrix
 def fundamentalMatrix(points, f1, f2):
-    x, y = np.zeros(8), np.zeros(8)
-    x_, y_ = np.zeros(8), np.zeros(8)
-    A, X, X_ = [], [], []
+    x, y = np.zeros(len(points)), np.zeros(len(points))
+    x_, y_ = np.zeros(len(points)), np.zeros(len(points))
+    A = []
 
     # generating A matrix
-    for i in range(8):
+    for i in range(len(points)):
         x[i], y[i] = f1[points[i].queryIdx].pt[0], f1[points[i].queryIdx].pt[1]
         x_[i], y_[i] = f2[points[i].trainIdx].pt[0], f2[points[i].trainIdx].pt[1]
 
         A_rows = np.array([[x[i]*x_[i], x[i]*y_[i], x[i], y[i]*x_[i], y[i]*y_[i], y[i], x_[i], y_[i], 1]])
-        X_col = np.array([[x[i]], [y[i]], [1]])
-        X_col_ = np.array([[x_[i]], [y_[i]], [1]])
-
-        X.append(X_col)
-        X_.append(X_col_)
         A.append(A_rows)
 
-    X = np.reshape(np.array(X).T, (3, 8))
-    X_ = np.reshape(np.array(X_).T, (3, 8))
     A = np.reshape(A, (8, 9))
 
     [U, S, V] = np.linalg.svd(A)
     vx = V[:, 8]
 
     F = np.reshape(vx, (3, 3))
-    F = np.round(F, 4)
-    F[2, 2] = 0
 
-    return F, X, X_
+    return F
+
+
+# function to create matrix using keypoints
+def keyMatrix(points, f1, f2):
+
+    # key points storing in matrix
+    x, y = np.zeros(len(points)), np.zeros(len(points))
+    x_, y_ = np.zeros(len(points)), np.zeros(len(points))
+    X, X_ = [], []
+
+    # generating matrix
+    for i in range(len(points)):
+        x[i], y[i] = f1[points[i].queryIdx].pt[0], f1[points[i].queryIdx].pt[1]
+        x_[i], y_[i] = f2[points[i].trainIdx].pt[0], f2[points[i].trainIdx].pt[1]
+
+        X_col = np.array([[x[i]], [y[i]], [1]])
+        X_col_ = np.array([[x_[i]], [y_[i]], [1]])
+
+        X.append(X_col)
+        X_.append(X_col_)
+
+    X = np.reshape(np.array(X).T, (3, len(points)))
+    X_ = np.reshape(np.array(X_).T, (3, len(points)))
+
+    return X, X_
 
 
 # function to get best fundamental matrix
 def fRANSAC(points, kp1, kp2):
+
+    x, x_ = keyMatrix(points, kp1, kp2)
 
     ass_prob = 0
 
@@ -77,22 +88,30 @@ def fRANSAC(points, kp1, kp2):
         inlier_count = 0
 
         # get fundamental matrix for sample
-        F, x, x_ = fundamentalMatrix(DMatch, kp1, kp2)
+        F = fundamentalMatrix(DMatch, kp1, kp2)
 
-        # epipolar constraint
+        # epi-polar constraint
         ep_const = x_.T @ F @ x
 
-        for i in range(len(DMatch)):
+        for i in range(len(ep_const)):
             if ep_const[i, i] < 0:
                 inlier_count += 1
 
-        new_prob = inlier_count/len(DMatch)
+        new_prob = inlier_count/len(points)
 
         if new_prob >= ass_prob:
             ass_prob = new_prob
             bestF = F
 
     return bestF
+
+
+# function to get essential matrix
+def essentialMatrix(KMat, F):
+    E = KMat.T @ F @ KMat
+    [U, S, V] = np.linalg.svd(E)
+    E = U @ np.diag([1, 1, 0]) @ V.T
+    return E
 
 
 # main function
@@ -126,10 +145,12 @@ if __name__ == '__main__':
         # get keypoints using ORB
         match, key1, key2 = getKeypoints(old_undistorted_image, current_undistorted_image)
 
-        # fundamental matrix with RANSAC
-        F = fRANSAC(match, key1, key2)
+        # estimate fundamental matrix with RANSAC
+        Fundamental_Matrix = fRANSAC(match, key1, key2)
 
-        # print(F)
+        # essential matrix
+        K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+        Essential_Matrix = essentialMatrix(K, Fundamental_Matrix)
 
         # cv2.imshow('frame', old_undistorted_image)
 
