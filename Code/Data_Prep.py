@@ -47,6 +47,10 @@ def fundamentalMatrix(points, f1, f2):
     vx = V[:, 8]
 
     F = np.reshape(vx, (3, 3))
+    [U, S, V] = np.linalg.svd(F)
+    S[2] = 0
+
+    F = U @ np.diag([S[0], S[1], S[2]]) @ V.T
 
     return F
 
@@ -114,6 +118,36 @@ def essentialMatrix(KMat, F):
     return E
 
 
+# function to get camera poses
+def cameraPoses(E):
+    [U, _, V] = np.linalg.svd(E)
+    W = np.array([[0, -1, 0], [1, 0, 0], [0, 0, 1]])
+
+    # camera pose and rotation
+    C1, C2, C3, C4 = U[:, 2], -U[:, 2], U[:, 2], -U[:, 2]
+    R1, R2, R3, R4 = U @ W @ V.T, U @ W @ V.T, U @ W.T @ V.T, U @ W.T @ V.T
+    C, R = [C1, C2, C3, C4], [R1, R2, R3, R4]
+
+    for i in range(len(R)):
+        if np.linalg.det(R[i]) < 0:
+            C[i] *= -1
+            R[i] *= -1
+
+    return C, R
+
+
+# function to decompose essential matrix into translation and rotation matrix
+def estimateCameraPose(E):
+
+    # get camera poses
+    C, R = cameraPoses(E)
+
+    # Cheirality Condition
+
+
+    # return T, R
+
+
 # main function
 if __name__ == '__main__':
 
@@ -142,7 +176,7 @@ if __name__ == '__main__':
         old_undistorted_image = UndistortImage(old_color_frame, LUT)
         current_undistorted_image = UndistortImage(current_color_frame, LUT)
 
-        # get keypoints using ORB
+        # get key-points using ORB
         match, key1, key2 = getKeypoints(old_undistorted_image, current_undistorted_image)
 
         # estimate fundamental matrix with RANSAC
@@ -151,6 +185,9 @@ if __name__ == '__main__':
         # essential matrix
         K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
         Essential_Matrix = essentialMatrix(K, Fundamental_Matrix)
+
+        # Get best translation and rotation matrix
+        estimateCameraPose(Essential_Matrix)
 
         # cv2.imshow('frame', old_undistorted_image)
 
