@@ -18,13 +18,23 @@ def getKeypoints(old_img, current_image):
     kp2, des2 = orb.detectAndCompute(current_gray_image, None)
 
     # Match descriptors.
-    matches = bf.match(des1, des2)
+    # matches = bf.match(des1, des2)
     # matches = bf.knnMatch(des1, des2, k=2)
 
-    # Sort them in the order of their distance.
-    matches = sorted(matches, key=lambda x: x.distance)
+    # BFMatcher with default params
+    bf = cv2.BFMatcher()
+    matches = bf.knnMatch(des1, des2, k=2)
 
-    return matches, kp1, kp2
+    # Apply ratio test
+    good = []
+    for m, n in matches:
+        if m.distance < 0.75 * n.distance:
+            good.append(m)
+
+    # Sort them in the order of their distance.
+    # matches = sorted(matches, key=lambda x: x.distance)
+
+    return good, kp1, kp2
 
 
 # function to create fundamental matrix
@@ -44,14 +54,12 @@ def fundamentalMatrix(points, f1, f2):
     A = np.reshape(A, (8, 9))
 
     [U, S, V] = np.linalg.svd(A)
-    vx = V[:, 8]
 
-    F = np.reshape(vx, (3, 3))
+    F = np.reshape(V[:, -1], (3, 3))
     [U, S, V] = np.linalg.svd(F)
-    S[2] = 0
 
-    F = U @ np.diag([S[0], S[1], S[2]]) @ V.T
-    F = np.round(F, 4)
+    F = U @ np.diag([S[0], S[1], 0]) @ V
+    # F = np.round(F, 4)
 
     return F
 
@@ -113,7 +121,7 @@ def fRANSAC(points, kp1, kp2):
 def essentialMatrix(KMat, F):
     E = KMat.T @ F @ KMat
     [U, S, V] = np.linalg.svd(E)
-    E = U @ np.diag([1, 1, 0]) @ V.T
+    E = U @ np.diag([1, 1, 0]) @ V
     return E
 
 
@@ -191,8 +199,8 @@ if __name__ == '__main__':
     bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
 
     for img in range(len(filenames)):
-        old_frame = cv2.imread(filenames[img], 0)
-        current_frame = cv2.imread(filenames[img+1], 0)
+        old_frame = cv2.imread(filenames[img+18], 0)
+        current_frame = cv2.imread(filenames[img+1+18], 0)
 
         # convert bayer image to color image
         old_color_frame = cv2.cvtColor(old_frame, cv2.COLOR_BayerGR2BGR)
