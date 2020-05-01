@@ -51,6 +51,7 @@ def fundamentalMatrix(points, f1, f2):
     S[2] = 0
 
     F = U @ np.diag([S[0], S[1], S[2]]) @ V.T
+    F = np.round(F, 4)
 
     return F
 
@@ -74,8 +75,8 @@ def keyMatrix(points, f1, f2):
         X.append(X_col)
         X_.append(X_col_)
 
-    X = np.reshape(np.array(X).T, (3, len(points)))
-    X_ = np.reshape(np.array(X_).T, (3, len(points)))
+    X = np.reshape(np.array(X).T, (3, len(points))).T
+    X_ = np.reshape(np.array(X_).T, (3, len(points))).T
 
     return X, X_
 
@@ -87,7 +88,7 @@ def fRANSAC(points, kp1, kp2):
 
     ass_prob = 0
 
-    for n in range(100):
+    for _ in range(100):
         DMatch = random.sample(points, 8)
         inlier_count = 0
 
@@ -95,10 +96,8 @@ def fRANSAC(points, kp1, kp2):
         F = fundamentalMatrix(DMatch, kp1, kp2)
 
         # epi-polar constraint
-        ep_const = x_.T @ F @ x
-
-        for i in range(len(ep_const)):
-            if ep_const[i, i] < 0:
+        for i in range(len(x)):
+            if abs(x_[i] @ F @ x[i].T) < 0.001:
                 inlier_count += 1
 
         new_prob = inlier_count/len(points)
@@ -107,7 +106,7 @@ def fRANSAC(points, kp1, kp2):
             ass_prob = new_prob
             bestF = F
 
-    return bestF
+    return bestF, x, x_
 
 
 # function to get essential matrix
@@ -126,23 +125,50 @@ def cameraPoses(E):
     # camera pose and rotation
     C1, C2, C3, C4 = U[:, 2], -U[:, 2], U[:, 2], -U[:, 2]
     R1, R2, R3, R4 = U @ W @ V.T, U @ W @ V.T, U @ W.T @ V.T, U @ W.T @ V.T
-    C, R = [C1, C2, C3, C4], [R1, R2, R3, R4]
+    C, R = np.array([[C1], [C2], [C3], [C4]]), [R1, R2, R3, R4]
+    C = np.reshape(C, (4, 3)).T
 
     for i in range(len(R)):
         if np.linalg.det(R[i]) < 0:
-            C[i] *= -1
+            C[:, i] *= -1
             R[i] *= -1
 
     return C, R
 
 
+# function for linear triangulation
+def linearTriangulation(C, R, kp1, kp2):
+
+    C = C.reshape((3, 1))
+
+    H0 = np.eye(3, 4)
+    H1 = np.hstack((R, C))
+
+    rot = np.zeros((4, 3))
+    trans = np.zeros((4, 1))
+
+    Z = np.zeros((3, len(kp1)))
+
+    pt1 = -np.eye(2, 3)
+    pt2 = -np.eye(2, 3)
+
+    # for i in range(len(kp1)):
+    #     pt1[:, 2] = kp1[i, :]
+
+    # return Z
+
+
 # function to decompose essential matrix into translation and rotation matrix
-def estimateCameraPose(E):
+def estimateCameraPose(E, kp1, kp2):
 
     # get camera poses
     C, R = cameraPoses(E)
+    len((C[0]))
+    Z = [0, 0, 0, 0]
 
-    # Cheirality Condition
+    # triangulate 3D points using linear least square
+    for i in range(len(C)):
+        Z[i] = linearTriangulation(C[:, i], R[i], kp1, kp2)
 
 
     # return T, R
@@ -180,14 +206,14 @@ if __name__ == '__main__':
         match, key1, key2 = getKeypoints(old_undistorted_image, current_undistorted_image)
 
         # estimate fundamental matrix with RANSAC
-        Fundamental_Matrix = fRANSAC(match, key1, key2)
+        Fundamental_Matrix, key1, key2 = fRANSAC(match, key1, key2)
 
         # essential matrix
         K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
         Essential_Matrix = essentialMatrix(K, Fundamental_Matrix)
 
         # Get best translation and rotation matrix
-        estimateCameraPose(Essential_Matrix)
+        estimateCameraPose(Essential_Matrix, key1, key2)
 
         # cv2.imshow('frame', old_undistorted_image)
 
