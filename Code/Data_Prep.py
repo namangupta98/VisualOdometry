@@ -4,6 +4,7 @@ from Oxford_dataset.ReadCameraModel import ReadCameraModel
 from Oxford_dataset.UndistortImage import UndistortImage
 import numpy as np
 import random
+import matplotlib.pyplot as plt
 
 
 # function to get keypoints
@@ -17,10 +18,6 @@ def getKeypoints(old_img, current_image):
     kp1, des1 = orb.detectAndCompute(old_gray_image, None)
     kp2, des2 = orb.detectAndCompute(current_gray_image, None)
 
-    # Match descriptors.
-    # matches = bf.match(des1, des2)
-    # matches = bf.knnMatch(des1, des2, k=2)
-
     # BFMatcher with default params
     bf = cv2.BFMatcher()
     matches = bf.knnMatch(des1, des2, k=2)
@@ -31,22 +28,23 @@ def getKeypoints(old_img, current_image):
         if m.distance < 0.75 * n.distance:
             good.append(m)
 
-    # Sort them in the order of their distance.
-    # matches = sorted(matches, key=lambda x: x.distance)
-
     return good, kp1, kp2
 
 
 # function to create fundamental matrix
-def fundamentalMatrix(points, f1, f2):
-    x, y = np.zeros(len(points)), np.zeros(len(points))
-    x_, y_ = np.zeros(len(points)), np.zeros(len(points))
+def fundamentalMatrix(f1, f2, pt_index):
+    x, y = np.zeros(len(pt_index)), np.zeros(len(pt_index))
+    x_, y_ = np.zeros(len(pt_index)), np.zeros(len(pt_index))
+
     A = []
 
     # generating A matrix
-    for i in range(len(points)):
-        x[i], y[i] = f1[points[i].queryIdx].pt[0], f1[points[i].queryIdx].pt[1]
-        x_[i], y_[i] = f2[points[i].trainIdx].pt[0], f2[points[i].trainIdx].pt[1]
+    for i in range(len(pt_index)):
+        # x[i], y[i] = f1[points[i].queryIdx].pt[0], f1[points[i].queryIdx].pt[1]
+        # x_[i], y_[i] = f2[points[i].trainIdx].pt[0], f2[points[i].trainIdx].pt[1]
+
+        x[i], y[i] = f1[pt_index][0][0], f1[pt_index][0][1]
+        x_[i], y_[i] = f2[pt_index][0][0], f2[pt_index][0][1]
 
         A_rows = np.array([[x[i]*x_[i], x[i]*y_[i], x[i], y[i]*x_[i], y[i]*y_[i], y[i], x_[i], y_[i], 1]])
         A.append(A_rows)
@@ -97,11 +95,14 @@ def fRANSAC(points, kp1, kp2):
     ass_prob = 0
 
     for _ in range(100):
-        DMatch = random.sample(points, 8)
+        # DMatch = random.sample(points, 8)
         inlier_count = 0
 
+        # get 8 random points
+        index = random.sample(range(len(points)), 8)
+
         # get fundamental matrix for sample
-        F = fundamentalMatrix(DMatch, kp1, kp2)
+        F = fundamentalMatrix(x, x_, index)
 
         # epi-polar constraint
         for i in range(len(x)):
@@ -149,8 +150,8 @@ def linearTriangulation(C, R, kp1, kp2):
 
     C = C.reshape((3, 1))
 
-    H0 = np.eye(3, 4)
-    H1 = np.hstack((R, C))
+    P1 = np.eye(3, 4)
+    P2 = np.hstack((R, C))
 
     rot = np.zeros((4, 3))
     trans = np.zeros((4, 1))
@@ -160,10 +161,27 @@ def linearTriangulation(C, R, kp1, kp2):
     pt1 = -np.eye(2, 3)
     pt2 = -np.eye(2, 3)
 
-    # for i in range(len(kp1)):
-    #     pt1[:, 2] = kp1[i, :]
+    for i in range(len(kp1)):
+        pt1[:, -1] = kp1[i, 0:2]
+        pt2[:, -1] = kp2[i, 0:2]
 
-    # return Z
+        rot[0:2, :] = pt1.dot(P1[0:3, 0:3])
+        rot[2:4, :] = pt2.dot(P2[0:3, 0:3])
+
+        trans[0:2, :] = pt1.dot(P1[0:3, 3:4])
+        trans[2:4, :] = pt2.dot(P2[0:3, 3:4])
+
+        cv2.solve(rot, trans, Z[:, i:i + 1], cv2.DECOMP_SVD)
+
+    Z = Z.reshape(len(kp1), 3)
+    Z = np.hstack((Z, np.ones((len(Z), 1))))
+
+    Z = np.divide(Z, np.array([Z[:, 3], Z[:, 3], Z[:, 3], Z[:, 3]]).T)
+
+    # cheirality equation
+    Z = np.sum(P2 @ Z.T > 0)
+
+    return Z
 
 
 # function to decompose essential matrix into translation and rotation matrix
@@ -171,15 +189,19 @@ def estimateCameraPose(E, kp1, kp2):
 
     # get camera poses
     C, R = cameraPoses(E)
-    len((C[0]))
     Z = [0, 0, 0, 0]
 
     # triangulate 3D points using linear least square
-    for i in range(len(C)):
+    for i in range(4):
         Z[i] = linearTriangulation(C[:, i], R[i], kp1, kp2)
 
+    index = np.argmax(Z)
 
-    # return T, R
+    best_R, best_T = R[index], np.reshape(C[:, index], (3, 1))
+
+    best_H = np.vstack((np.hstack((best_R, best_T)), np.ones((1, 4))))
+
+    return best_H
 
 
 # main function
@@ -195,8 +217,7 @@ if __name__ == '__main__':
     # initiate STAR detector
     orb = cv2.ORB_create()
 
-    # create BFMatcher object
-    bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+    old_H = np.eye(4)
 
     for img in range(len(filenames)):
         old_frame = cv2.imread(filenames[img+18], 0)
@@ -221,9 +242,23 @@ if __name__ == '__main__':
         Essential_Matrix = essentialMatrix(K, Fundamental_Matrix)
 
         # Get best translation and rotation matrix
-        estimateCameraPose(Essential_Matrix, key1, key2)
+        current_H = estimateCameraPose(Essential_Matrix, key1, key2)
 
-        # cv2.imshow('frame', old_undistorted_image)
+        # store data
+        new_H = old_H @ current_H
+        x, z = new_H[0][-1], new_H[2][-1]
+        old_H = current_H
 
-        if cv2.waitKey(1) and 0xFF == ord('q'):
-            break
+        # plot graph
+        plt.plot(x, z, '-bo')
+
+        print(img+18)
+
+        if (img+18) % 50 == 0:
+            plt.show()
+            plt.savefig('Graph.png')
+
+        # cv2.imshow('current_undistorted_image', current_undistorted_image)
+        #
+        # if cv2.waitKey(1) and 0xFF == ord('q'):
+        #     break
