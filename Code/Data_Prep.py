@@ -28,25 +28,30 @@ def getKeypoints(old_img, current_image):
         if m.distance < 0.75 * n.distance:
             good.append(m)
 
-    return good, kp1, kp2
+    x, x_ = keyMatrix(good, kp1, kp2)
+
+    return x, x_
 
 
 # function to create fundamental matrix
-def fundamentalMatrix(f1, f2, pt_index):
-    x, y = np.zeros(len(pt_index)), np.zeros(len(pt_index))
-    x_, y_ = np.zeros(len(pt_index)), np.zeros(len(pt_index))
+def fundamentalMatrix(f1, f2, ptr):
+    # x, y = np.zeros(len(ptr)), np.zeros(len(ptr))
+    # x_, y_ = np.zeros(len(ptr)), np.zeros(len(ptr))
 
     A = []
 
     # generating A matrix
-    for i in range(len(pt_index)):
+    for pt_index in ptr:
         # x[i], y[i] = f1[points[i].queryIdx].pt[0], f1[points[i].queryIdx].pt[1]
         # x_[i], y_[i] = f2[points[i].trainIdx].pt[0], f2[points[i].trainIdx].pt[1]
 
-        x[i], y[i] = f1[pt_index][0][0], f1[pt_index][0][1]
-        x_[i], y_[i] = f2[pt_index][0][0], f2[pt_index][0][1]
+        # x[i], y[i] = f1[pt_index][0][0], f1[pt_index][0][1]
+        # x_[i], y_[i] = f2[pt_index][0][0], f2[pt_index][0][1]
 
-        A_rows = np.array([[x[i]*x_[i], x[i]*y_[i], x[i], y[i]*x_[i], y[i]*y_[i], y[i], x_[i], y_[i], 1]])
+        x, y = f1[pt_index][0:2]
+        x_, y_ = f2[pt_index][0:2]
+
+        A_rows = np.array([[x*x_, x*y_, x, y*x_, y*y_, y, x_, y_, 1]])
         A.append(A_rows)
 
     A = np.reshape(A, (8, 9))
@@ -88,18 +93,19 @@ def keyMatrix(points, f1, f2):
 
 
 # function to get best fundamental matrix
-def fRANSAC(points, kp1, kp2):
+def fRANSAC(x, x_):
 
-    x, x_ = keyMatrix(points, kp1, kp2)
+    # x, x_ = keyMatrix(points, kp1, kp2)
 
     ass_prob = 0
 
     for _ in range(100):
         # DMatch = random.sample(points, 8)
+
         inlier_count = 0
 
         # get 8 random points
-        index = random.sample(range(len(points)), 8)
+        index = random.sample(range(len(x)), 8)
 
         # get fundamental matrix for sample
         F = fundamentalMatrix(x, x_, index)
@@ -107,15 +113,16 @@ def fRANSAC(points, kp1, kp2):
         # epi-polar constraint
         for i in range(len(x)):
             if abs(x_[i] @ F @ x[i].T) < 0.001:
+                print(abs(x_[i] @ F @ x[i].T))
                 inlier_count += 1
 
-        new_prob = inlier_count/len(points)
+            new_prob = inlier_count/len(x)
 
-        if new_prob >= ass_prob:
-            ass_prob = new_prob
-            bestF = F
+            if new_prob >= ass_prob:
+                ass_prob = new_prob
+                bestF = F
 
-    return bestF, x, x_
+    return bestF
 
 
 # function to get essential matrix
@@ -231,15 +238,16 @@ if __name__ == '__main__':
         old_undistorted_image = UndistortImage(old_color_frame, LUT)
         current_undistorted_image = UndistortImage(current_color_frame, LUT)
 
-        # get key-points using ORB
-        match, key1, key2 = getKeypoints(old_undistorted_image, current_undistorted_image)
+        # get matching correspondences using ORB
+        key1, key2 = getKeypoints(old_undistorted_image, current_undistorted_image)
 
         # estimate fundamental matrix with RANSAC
-        Fundamental_Matrix, key1, key2 = fRANSAC(match, key1, key2)
+        Fundamental_Matrix = fRANSAC(key1, key2)
 
         # essential matrix
         K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
         Essential_Matrix = essentialMatrix(K, Fundamental_Matrix)
+        # essential_matrix = cv2.findEssentialMat(key1[:][0][0:2], key2[:][0][0:2], K, method=cv2.FM_RANSAC, threshold=0.001)
 
         # Get best translation and rotation matrix
         current_H = estimateCameraPose(Essential_Matrix, key1, key2)
@@ -250,7 +258,7 @@ if __name__ == '__main__':
         old_H = current_H
 
         # plot graph
-        plt.plot(x, z, '-bo')
+        plt.plot(-x, z, '-bo')
 
         print(img+18)
 
