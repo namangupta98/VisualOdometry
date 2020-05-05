@@ -268,16 +268,17 @@ if __name__ == '__main__':
         key1, key2 = getKeypoints(old_frame, current_frame)
 
         # estimate fundamental matrix with RANSAC
-        # Fundamental_Matrix = fRANSAC(key1, key2)
+        Fundamental_Matrix = fRANSAC(key1, key2)
+        # Fundamental_Matrix, _ = cv2.findFundamentalMat(key1, key2, method=cv2.FM_RANSAC)
 
         # essential matrix
         K = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
-        # Essential_Matrix = essentialMatrix(K, Fundamental_Matrix)
-        essential_matrix, _ = cv2.findEssentialMat(key1, key2, K, method=cv2.FM_RANSAC, threshold=0.001)
+        Essential_Matrix = essentialMatrix(K, Fundamental_Matrix)
+        # essential_matrix, _ = cv2.findEssentialMat(key1, key2, K, method=cv2.FM_RANSAC, threshold=0.001)
 
         # Get best translation and rotation matrix
-        # current_H = estimateCameraPose(essential_matrix, key1, key2)
-        _, Rot, Trans, _ = cv2.recoverPose(essential_matrix, key1, key2, K)
+        current_H = estimateCameraPose(Essential_Matrix, key1, key2)
+        # _, Rot, Trans, _ = cv2.recoverPose(essential_matrix, key1, key2, K)
 
         # condition check
         # if np.linalg.det(Rot)<0:
@@ -285,7 +286,7 @@ if __name__ == '__main__':
         #     Trans = -Trans
 
         # store data
-        current_H = np.vstack((np.hstack((Rot, Trans)), [0, 0, 0, 1]))
+        # current_H = np.vstack((np.hstack((Rot, Trans)), [0, 0, 0, 1]))
         new_H = old_H @ current_H
         x, z = new_H[0][-1], new_H[2][-1]
         old_H = new_H
