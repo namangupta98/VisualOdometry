@@ -11,12 +11,12 @@ import matplotlib.pyplot as plt
 def getKeypoints(old_img, current_image):
 
     # grayscale image
-    old_gray_image = cv2.cvtColor(old_img, cv2.COLOR_BGR2GRAY)
-    current_gray_image = cv2.cvtColor(current_image, cv2.COLOR_BGR2GRAY)
+    # old_gray_image = cv2.cvtColor(old_img, cv2.COLOR_BGR2GRAY)
+    # current_gray_image = cv2.cvtColor(current_image, cv2.COLOR_BGR2GRAY)
 
     # cropping image
-    old_gray_image = old_gray_image[150:650, 0:1280]
-    current_gray_image = current_gray_image[150:650, 0:1280]
+    # old_gray_image = old_gray_image[150:650, 0:1280]
+    # current_gray_image = current_gray_image[150:650, 0:1280]
 
     # FLANN parameters
     # FLANN_INDEX_KDTREE = 0
@@ -25,29 +25,49 @@ def getKeypoints(old_img, current_image):
 
     # initiate STAR detector
     # bf = cv2.FlannBasedMatcher(index_params, search_params)
-    bf = cv2.BFMatcher()
+    # bf = cv2.BFMatcher()
+    # sift = cv2.xfeatures2d.SIFT_create()
+    #
+    # # find keypoints with ORB
+    # kp1, des1 = sift.detectAndCompute(old_gray_image, None)
+    # kp2, des2 = sift.detectAndCompute(current_gray_image, None)
+    #
+    # # BFMatcher with default params
+    # matches = bf.match(des1, des2)
+    #
+    # # cv2.drawMatchesKnn expects list of lists as matches.
+    # # img3 = cv2.drawMatchesKnn(old_gray_image, kp1, current_gray_image, kp2, matches, outImg=None, flags=2)
+    # # cv2.imshow('img', cv2.resize(img3, (2560, 960)))
+    #
+    # # Apply ratio test
+    # # good = []
+    # # for m, n in matches:
+    # #     if m.distance < 0.75 * n.distance:
+    # #         good.append(m)
+    #
+    # x, x_ = keyMatrix(matches, kp1, kp2)
+
     sift = cv2.xfeatures2d.SIFT_create()
 
-    # find keypoints with ORB
-    kp1, des1 = sift.detectAndCompute(old_gray_image, None)
-    kp2, des2 = sift.detectAndCompute(current_gray_image, None)
+    kp1, des1 = sift.detectAndCompute(old_img, None)
+    kp2, des2 = sift.detectAndCompute(current_image, None)
 
-    # BFMatcher with default params
+    bf = cv2.BFMatcher()
     matches = bf.match(des1, des2)
 
-    # cv2.drawMatchesKnn expects list of lists as matches.
-    # img3 = cv2.drawMatchesKnn(old_gray_image, kp1, current_gray_image, kp2, matches, outImg=None, flags=2)
-    # cv2.imshow('img', cv2.resize(img3, (2560, 960)))
+    U = []
+    V = []
+    for m in matches:
+        pts_1 = kp1[m.queryIdx]
+        x1, y1 = pts_1.pt
+        pts_2 = kp2[m.trainIdx]
+        x2, y2 = pts_2.pt
+        U.append((x1, y1))
+        V.append((x2, y2))
+    U = np.array(U)
+    V = np.array(V)
 
-    # Apply ratio test
-    # good = []
-    # for m, n in matches:
-    #     if m.distance < 0.75 * n.distance:
-    #         good.append(m)
-
-    x, x_ = keyMatrix(matches, kp1, kp2)
-
-    return x, x_
+    return U, V
 
 
 # function to create fundamental matrix
@@ -224,7 +244,7 @@ def estimateCameraPose(E, kp1, kp2):
 if __name__ == '__main__':
 
     # read dataset
-    filenames = glob.glob("Oxford_dataset/stereo/centre/*.png")
+    filenames = glob.glob("Oxford_dataset/stereo/undistorted_images/*.png")
     filenames.sort()
 
     # get camera parameters
@@ -233,19 +253,19 @@ if __name__ == '__main__':
     old_H = np.eye(4)
 
     for img in range(len(filenames)):
-        old_frame = cv2.imread(filenames[img+18], 0)
-        current_frame = cv2.imread(filenames[img+1+18], 0)
+        old_frame = cv2.imread(filenames[img+18])
+        current_frame = cv2.imread(filenames[img+1+18])
 
         # convert bayer image to color image
-        old_color_frame = cv2.cvtColor(old_frame, cv2.COLOR_BayerGR2BGR)
-        current_color_frame = cv2.cvtColor(current_frame, cv2.COLOR_BayerGR2BGR)
-
-        # un-distort image
-        old_undistorted_image = UndistortImage(old_color_frame, LUT)
-        current_undistorted_image = UndistortImage(current_color_frame, LUT)
+        # old_color_frame = cv2.cvtColor(old_frame, cv2.COLOR_BayerGR2BGR)
+        # current_color_frame = cv2.cvtColor(current_frame, cv2.COLOR_BayerGR2BGR)
+        #
+        # # un-distort image
+        # old_undistorted_image = UndistortImage(old_color_frame, LUT)
+        # current_undistorted_image = UndistortImage(current_color_frame, LUT)
 
         # get matching correspondences using ORB
-        key1, key2 = getKeypoints(old_undistorted_image, current_undistorted_image)
+        key1, key2 = getKeypoints(old_frame, current_frame)
 
         # estimate fundamental matrix with RANSAC
         # Fundamental_Matrix = fRANSAC(key1, key2)
@@ -256,23 +276,22 @@ if __name__ == '__main__':
         essential_matrix, _ = cv2.findEssentialMat(key1, key2, K, method=cv2.FM_RANSAC, threshold=0.001)
 
         # Get best translation and rotation matrix
-
-        # current_H = estimateCameraPose(Essential_Matrix, key1, key2)
+        # current_H = estimateCameraPose(essential_matrix, key1, key2)
         _, Rot, Trans, _ = cv2.recoverPose(essential_matrix, key1, key2, K)
 
         # condition check
-        if np.linalg.det(Rot)<0:
-            Rot = -Rot
-            Trans = -Trans
+        # if np.linalg.det(Rot)<0:
+        #     Rot = -Rot
+        #     Trans = -Trans
 
         # store data
         current_H = np.vstack((np.hstack((Rot, Trans)), [0, 0, 0, 1]))
         new_H = old_H @ current_H
         x, z = new_H[0][-1], new_H[2][-1]
-        old_H = current_H
+        old_H = new_H
 
         # plot graph
-        plt.plot(x, z, '-bo')
+        plt.plot(x, -z, 'ro')
 
         print(img+18)
 
